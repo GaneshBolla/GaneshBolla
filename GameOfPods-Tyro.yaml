@@ -1,0 +1,185 @@
+Certificate and key pair for user drogo is created under /root. Add this user to kubeconfig = /root/.kube/config, User = drogo, client-key = /root/drogo.key client-certificate = /root/drogo.crt
+Create a new context in the default config file (/root/.kube/config) called 'developer' with user = drogo and cluster = kubernetes
+
+kubectl config --kubeconfig=config set-credentials developer --client-certificate=/root/drogo.crt --client-key=/root/drogo.key
+kubectl config --kubeconfig=config set-context developer --cluster=kubernetes --namespace=development --user=drogo
+
+developer-role', should have all(*) permissions for services in development namespace
+'developer-role', should have all permissions(*) for persistentvolumeclaims in development namespace
+'developer-role', should have all(*) permissions for pods in development namespace
+role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: development
+  name: developer-role
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["pods","services","persistentvolumeclaims"]
+  verbs: ["get", "watch", "list"]
+ 
+ create rolebinding = developer-rolebinding, role= 'developer-role', namespace = development
+rolebinding = developer-rolebinding associated with user = 'drogo'
+  
+apiVersion: rbac.authorization.k8s.io/v1
+# This role binding allows "jane" to read pods in the "default" namespace.
+# You need to already have a Role named "pod-reader" in that namespace.
+kind: RoleBinding
+metadata:
+  name: developer-rolebinding
+  namespace: development
+subjects:
+# You can specify more than one "subject"
+- kind: User
+  name: drogo # "name" is case sensitive
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  # "roleRef" specifies the binding to a Role / ClusterRole
+  kind: Role #this must be Role or ClusterRole
+  name: developer-role # this must match the name of the Role or ClusterRole you wish to bind to
+  apiGroup: rbac.authorization.k8s.io
+  
+Storage Request: 1Gi
+Access modes: ReadWriteMany
+pvc name = jekyll-site, namespace development
+
+controlplane $ cat pvc.yaml 
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+ name: jekyll-site
+ namespace: development
+spec:
+ accessModes:
+   - ReadWriteMany
+ volumeMode: Filesystem
+ resources: 
+   requests: 
+     storage: 1Gi
+     
+     
+Service 'jekyll' uses targetPort: '4000' , namespace: 'development'
+Service 'jekyll' uses Port: '8080' , namespace: 'development'
+Service 'jekyll' uses NodePort: '30097' , namespace: 'development'
+    
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jekyll
+  namespace: development
+spec:
+  type: NodePort
+  selector:
+    app: jekyll
+  ports:
+    - name: jekyll
+      port: 8080
+      targetPort: 4000
+      nodePort: 30097
+      protocol: TCP
+      
+      
+      
+pod: 'jekyll' has an initContainer, name: 'copy-jekyll-site', image: 'kodekloud/jekyll'
+initContainer: 'copy-jekyll-site' command: [ "jekyll", "new", "/site" ] (command to run: jekyll new /site)
+pod: 'jekyll', initContainer: 'copy-jekyll-site', mountPath = /site
+pod: 'jekyll', initContainer: 'copy-jekyll-site', volume name = site
+pod: 'jekyll', container: 'jekyll', volume name = site
+pod: 'jekyll', container: 'jekyll', mountPath = /site
+pod: 'jekyll', container: 'jekyll', image = kodekloud/jekyll-serve
+pod: 'jekyll', uses volume called 'site' with pvc = 'jekyll-site'
+pod: 'jekyll' uses label 'run=jekyll'
+
+--- 
+apiVersion: v1
+kind: Pod
+metadata: 
+  labels: 
+    run: jekyll
+  name: jekyll
+spec: 
+  containers: 
+    - 
+      image: "kodekloud/jekyll-serve"
+      name: site
+      ports: 
+        - 
+          containerPort: 80
+      volumeMounts: 
+        - 
+          mountPath: /site
+          name: site
+          subPath: modules
+  initContainers: 
+    - 
+      command: [ "jekyll", "new", "/site" ]
+      image: "kodekloud/jekyll"
+      name: copy-jekyll-site
+      volumeMounts: 
+        - 
+          mountPath: /site
+          name: site
+  volumes: 
+    - 
+      name: site
+      persistentVolumeClaim: 
+        claimName: jekyll-site
+        
+set context 'developer' with user = 'drogo' and cluster = 'kubernetes' as the current context.
+
+
+#########################################
+Create a new service: name = vote-service
+port = '5000'
+targetPort = '80'
+nodePort= '31000'
+service endpoint exposes deployment 'vote-deployment'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vote-service
+  namespace: vote
+  labels:
+    run: vote-deployment
+spec:
+  type: NodePort
+  selector:
+    run: vote-deployment
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 80
+      nodePort: 31000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: result-service
+  namespace: vote
+  labels:
+    run: result-deployment
+spec:
+  type: NodePort
+  selector:
+    run: result-deployment
+  ports:
+    - protocol: TCP
+      port: 5001
+      targetPort: 80
+      nodePort: 31001
+      
+Create a deployment: name = 'vote-deployment'
+image = 'kodekloud/examplevotingapp_vote:before'
+status: 'Running'  
+
+kubectl run  vote-deployment -n vote --image='kodekloud/examplevotingapp_vote:before'
+
+kubectl run  result-deployment -n vote --image='kodekloud/examplevotingapp_result:before'
+
+kubectl run  worker -n vote --image='kodekloud/examplevotingapp_worker'
+
+    

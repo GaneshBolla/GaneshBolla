@@ -1,0 +1,371 @@
+hostpath setup:
+mkdir /drupal-mysql-data
+mkdir /drupal-data
+
+pv.yaml
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+ name: drupal-mysql-pv
+spec:
+ accessModes: 
+   - ReadWriteOnce
+ capacity:
+   storage: 5Gi
+ hostPath:
+   path: /drupal-mysql-data
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+ name: drupal-pv
+spec:
+ accessModes: 
+   - ReadWriteOnce
+ capacity:
+   storage: 5Gi
+ hostPath:
+   path: /drupal-data 
+
+$kubectl create -f pv.yaml
+ 
+pvc.yaml 
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+ name: drupal-mysql-pvc
+spec:
+ accessModes: 
+   - ReadWriteOnce
+ resources:
+   requests:
+     storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+ name: drupal-pvc
+spec:
+ accessModes: 
+   - ReadWriteOnce
+ resources:
+   requests:
+     storage: 5Gi
+     
+kubectl create secret generic drupal-mysql-secret --from-literal=MYSQL_ROOT_PASSWORD=root_password --from-literal=MYSQL_DATABASE=drupal-database --from-literal=MYSQL_USER=mysql
+controlplane $ cat secret.yaml 
+apiVersion: v1
+data:
+  MYSQL_DATABASE: ZHJ1cGFsLWRhdGFiYXNl
+  MYSQL_ROOT_PASSWORD: cm9vdF9wYXNzd29yZA==
+  MYSQL_USER: bXlzcWw=
+kind: Secret
+metadata:
+  creationTimestamp: "2021-07-27T05:37:48Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:MYSQL_DATABASE: {}
+        f:MYSQL_ROOT_PASSWORD: {}
+        f:MYSQL_USER: {}
+      f:type: {}
+    manager: kubectl-create
+    operation: Update
+    time: "2021-07-27T05:37:48Z"
+  name: drupal-mysql-secret
+  namespace: default
+  resourceVersion: "1561"
+  selfLink: /api/v1/namespaces/default/secrets/drupal-mysql-secret
+  uid: 621f5d5a-358e-451f-9835-98d65612137d
+type: Opaque
+
+         
+Name: drupal-mysql
+Replicas: 1
+Image: mysql:5.7
+Deployment Volume uses PVC : drupal-mysql-pvc
+Volume Mount Path: /var/lib/mysql, subPath: dbdata
+Deployment: 'drupal-mysql' running         
+ENV: MYSQL_DATABASE valueFrom secret: drupal-mysql-secret
+ENV: MYSQL_ROOT_PASSWORD valueFrom secret
+ENV: MYSQL_USER valueFrom secret: drupal-mysql-secret    
+$ cat drupal-mysql.yaml
+---
+apiVersion: apps/v1
+#apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: drupal-myssql
+  labels:
+    app: drupal-mysql
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: drupal-mysql
+    spec:
+      containers:
+      - env:
+        - name: MYSQL_ROOT_PASSWORD
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_DATABASE      
+        - name: MYSQL_USER
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_USER  
+        name: cont-drupal-myssql
+        image: mysql:5.7
+        ports: 
+          - containerPort: 3306
+            name: mysql
+            protocol: TCP       
+        volumeMounts:
+          - name: drupal-mysql-pvc
+            mountPath: /var/lib/mysql
+            subPath: dbdata
+      volumes: 
+        - name: vol-drupal
+          persistentVolumeClaim:
+            claimName: drupal-mysql-pvc 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drupal-mysql-service
+spec:
+  type: ClusterIP
+  selector:
+    app: drupal
+    type: front-end
+  ports:
+    - name: drupal-mysql
+      port: 3306
+      protocol: TCP
+
+controlplane $ cat drupal.yaml and service
+--- 
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  labels: 
+    app: drupal
+  name: drupal
+spec: 
+  replicas: 1
+  template: 
+    metadata: 
+      labels: 
+        name: drupal
+    spec: 
+      containers: 
+        - 
+          image: "drupal:8.6"
+          name: drupal
+          ports: 
+            - 
+              containerPort: 80
+          volumeMounts: 
+            - 
+              mountPath: /var/www/html/modules
+              name: vol-drupal
+              subPath: modules
+            - 
+              mountPath: /var/www/html/profiles
+              name: drupal-pvc
+              subPath: profiles
+            - 
+              mountPath: /var/www/html/sites
+              name: vol-drupal
+              subPath: sites
+            - 
+              mountPath: /var/www/html/themes
+              name: vol-drupal
+              path: themes
+      initContainers: 
+        - 
+          Args: 
+            - "cp -r /var/www/html/sites/ /data/; chown www-data:www-data /data/ -R"
+          command: 
+            - /bin/bash
+            - "-c"
+          image: "drupal:8.6"
+          name: init-sites-volume
+          volumeMounts: 
+            - 
+              mountPath: /data
+              name: vol-drupal
+      volumes: 
+        - 
+          name: vol-drupal
+          persistentVolumeClaim: 
+            claimName: drupal-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drupal-service
+spec:
+  type: NodePort
+  selector:
+    app: drupal
+    type: front-end
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      nodePort: 30095
+
+      
+
+
+
+
+    
+
+
+ #####################################   
+Deployment Name: drupal
+Replicas: 1
+Image: drupal:8.6
+Deployment has an 
+initContainer, name: 'init-sites-volume'
+initContainer 'init-sites-volume', image: drupal:8.6
+initContainer 'init-sites-volume', persistentVolumeClaim: drupal-pvc
+initContainer 'init-sites-volume', mountPath: /data
+initContainer 'init-sites-volume', Command: [ "/bin/bash", "-c" ], 
+initContainer: Args: [ 'cp -r /var/www/html/sites/ /data/; chown www-data:www-data /data/ -R' ]
+Deployment 'drupal' uses correct pvc: drupal-pvc
+Deployment has a regular container, name: 'drupal', image: 'drupal:8.6'
+container: 'drupal', Volume mountPath: /var/www/html/modules, subPath: modules
+container: 'drupal', Volume mountPath: /var/www/html/profiles, subPath: profiles
+container: 'drupal', Volume mountPath: /var/www/html/sites, subPath: sites
+container: 'drupal', Volume mountPath: /var/www/html/themes, subPath: themes
+Deployment: "drupal" running
+Deployment: 'drupal' has label 'app=drupal'
+
+
+
+---
+apiVersion: apps/v1
+#apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: drupal-myssql
+  labels:
+    app: drupal-mysql
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: drupal-mysql
+  containers:
+  volumes: 
+    - name: vol-drupal
+      persistentVolumeClaim:
+        claimName: drupal-mysql-pvc 
+  - env:
+        - name: MYSQL_ROOT_PASSWORD
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_DATABASE      
+        - name: MYSQL_USER
+          volueFrom:
+            secretKeyRef:
+              name: drupal-mysql-secret
+              key: MYSQL_USER  
+        name: cont-drupal-myssql
+        image: mysql:5.7
+        ports: 
+          - containerPort: 3306
+            name: mysql
+            protocol: TCP       
+        volumeMounts:
+          - name: drupal-mysql-pvc
+            mountPath: /var/lib/mysql
+            subPath: dbdata
+      
+  ######################
+  
+  --- 
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  labels: 
+    app: drupal-myssql
+  name: drupal-myssql
+spec: 
+  selector: 
+    matchLabels: 
+      app: drupal-myssql
+  strategy: 
+    type: Recreate
+  template: 
+    metadata: 
+      labels: 
+        app: drupal-myssql
+    spec: 
+      containers: 
+        - 
+          env: 
+            - 
+              name: MYSQL_DATABASE
+              valueFrom: 
+                secretKeyRef: 
+                  key: MYSQL_DATABASE
+                  name: drupal-mysql-secret
+            - 
+              name: MYSQL_USER
+              valueFrom: 
+                secretKeyRef: 
+                  key: MYSQL_USER
+                  name: drupal-mysql-secret
+            - 
+              name: MYSQL_ROOT_PASSWORD
+              valueFrom: 
+                secretKeyRef: 
+                  key: MYSQL_ROOT_PASSWORD
+                  name: drupal-mysql-secret
+          image: "mysql:5.7"
+          name: drupal-myssql
+          ports: 
+            - 
+              containerPort: 3306
+              name: mysql
+          volumeMounts: 
+            - 
+              mountPath: /var/lib/mysql
+              name: drupal-mysql-pvc
+              subPath: dbdata
+      volumes: 
+        - 
+          name: vol-drupal
+          persistentVolumeClaim: 
+            claimName: drupal-mysql-pv
+
+
+		  
+
+
+
