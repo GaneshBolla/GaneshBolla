@@ -1,0 +1,5 @@
+statement = input("Enter a statement : ")
+print("User Statement is : ", statement)
+word1 = input("Enter the word to replace : ")
+word2 = input("Enter the word to replace it with to : ")
+print(statement.replace(word1,word2))
