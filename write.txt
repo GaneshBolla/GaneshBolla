@@ -1,0 +1,3 @@
+This is writing from python to existing file by python and overriding the file
+ Appending to existing file
+Appending to existing file 2nd time
